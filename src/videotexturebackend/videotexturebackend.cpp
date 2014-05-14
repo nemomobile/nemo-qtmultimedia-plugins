@@ -463,6 +463,7 @@ private:
     QSize m_nativeSize;
     QSize m_textureSize;
     QSize m_implicitSize;
+    gulong m_signalId;
     int m_orientation;
     int m_textureOrientation;
     bool m_mirror;
@@ -476,6 +477,7 @@ NemoVideoTextureBackend::NemoVideoTextureBackend(QDeclarativeVideoOutput *parent
     , m_sink(0)
     , m_display(0)
     , m_texture(0)
+    , m_signalId(0)
     , m_orientation(0)
     , m_textureOrientation(0)
     , m_mirror(false)
@@ -497,7 +499,8 @@ NemoVideoTextureBackend::NemoVideoTextureBackend(QDeclarativeVideoOutput *parent
 
         g_object_set(G_OBJECT(m_sink), "egl-display", m_display, NULL);
 
-        g_signal_connect(G_OBJECT(m_sink), "frame-ready", G_CALLBACK(frame_ready), this);
+        m_signalId = g_signal_connect(
+                    G_OBJECT(m_sink), "frame-ready", G_CALLBACK(frame_ready), this);
     }
 }
 
@@ -505,7 +508,10 @@ NemoVideoTextureBackend::~NemoVideoTextureBackend()
 {
     releaseControl();
 
-    gst_object_unref(GST_OBJECT(m_sink));
+    if (m_sink) {
+        g_signal_handler_disconnect(G_OBJECT(m_sink), m_signalId);
+        gst_object_unref(GST_OBJECT(m_sink));
+    }
 
     if (m_texture) {
         m_texture->deleteLater();
