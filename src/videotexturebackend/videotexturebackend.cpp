@@ -42,7 +42,6 @@
 #include <QSGGeometryNode>
 #include <QSGMaterial>
 #include <QSGTexture>
-#include <QSGTextureProvider>
 
 #include <qpa/qplatformnativeinterface.h>
 #include <private/qgstreamerelementcontrol_p.h>
@@ -102,6 +101,7 @@ public:
 
 private:
     friend class GStreamerVideoMaterialShader;
+    friend class GStreamerVideoNode;
 
     GStreamerVideoTexture *m_texture;
 };
@@ -113,6 +113,7 @@ public:
     ~GStreamerVideoNode();
 
     void setBoundingRect(const QRectF &rect, int orientation, bool horizontalMirror, bool verticalMirror);
+    void preprocess();
 
 private:
     GStreamerVideoMaterial m_material;
@@ -309,8 +310,6 @@ void GStreamerVideoMaterialShader::updateState(
         program()->setUniformValue(id_texture, 0);
     }
 
-    material->m_texture->updateTexture();
-
     const QRectF subRect = material->m_texture->normalizedTextureSubRect();
     program()->setUniformValue(
                 id_subrect, QVector4D(subRect.x(), subRect.y(), subRect.width(), subRect.height()));
@@ -387,10 +386,18 @@ GStreamerVideoNode::GStreamerVideoNode(GStreamerVideoTexture *texture)
 {
     setGeometry(&m_geometry);
     setMaterial(&m_material);
+    setFlag(UsePreprocess);
 }
 
 GStreamerVideoNode::~GStreamerVideoNode()
 {
+}
+
+void GStreamerVideoNode::preprocess()
+{
+    GStreamerVideoTexture *t = m_material.m_texture;
+    if (t && t->updateTexture())
+        markDirty(QSGNode::DirtyMaterial);
 }
 
 void GStreamerVideoNode::setBoundingRect(
