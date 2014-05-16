@@ -566,6 +566,7 @@ bool NemoVideoTextureBackend::init(QMediaService *service)
         QMetaObject::connect(
                     q, q->metaObject()->property(mirrorIndex).notifySignalIndex(),
                     this, staticMetaObject.indexOfMethod("mirrorChanged()"));
+        mirrorChanged();
     }
 
     return true;
