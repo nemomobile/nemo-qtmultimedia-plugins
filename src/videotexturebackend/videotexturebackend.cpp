@@ -36,6 +36,7 @@
 #include <QGuiApplication>
 #include <QMediaObject>
 #include <QMediaService>
+#include <QMutex>
 #include <QResizeEvent>
 #include <QQuickWindow>
 #include <QSGGeometry>
@@ -456,6 +457,7 @@ private slots:
 private:
     static void frame_ready(GstElement *sink, int frame, void *data);
 
+    QMutex m_mutex;
     QPointer<QGStreamerElementControl> m_control;
     GstElement *m_sink;
     EGLDisplay m_display;
@@ -509,8 +511,11 @@ NemoVideoTextureBackend::~NemoVideoTextureBackend()
     releaseControl();
 
     if (m_sink) {
+        QMutexLocker locker(&m_mutex);
+
         g_signal_handler_disconnect(G_OBJECT(m_sink), m_signalId);
         gst_object_unref(GST_OBJECT(m_sink));
+        m_sink = 0;
     }
 
     if (m_texture) {
@@ -697,6 +702,12 @@ void NemoVideoTextureBackend::frame_ready(GstElement *, int frame, void *data)
     if (frame < 0) {
         instance->m_active = false;
     } else {
+        QMutexLocker locker(&instance->m_mutex);
+
+        if (!instance->m_sink) {
+            return;
+        }
+
         if (GstCaps *caps = gst_pad_get_negotiated_caps(
                        gst_element_get_static_pad(instance->m_sink, "sink"))) {
             QSize textureSize;
