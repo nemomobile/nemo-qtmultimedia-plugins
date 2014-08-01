@@ -632,6 +632,7 @@ QSGNode *NemoVideoTextureBackend::updatePaintNode(QSGNode *oldNode, QQuickItem::
 
     if (!node) {
         node = new GStreamerVideoNode(m_texture);
+        m_geometryChanged = true;
     }
 
     if (m_geometryChanged) {
