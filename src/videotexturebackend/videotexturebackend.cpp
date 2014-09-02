@@ -709,6 +709,7 @@ void NemoVideoTextureBackend::frame_ready(GstElement *, int frame, void *data)
 
     if (frame < 0) {
         instance->m_active = false;
+        QCoreApplication::postEvent(instance, new QEvent(QEvent::UpdateRequest));
     } else {
         QMutexLocker locker(&instance->m_mutex);
 
