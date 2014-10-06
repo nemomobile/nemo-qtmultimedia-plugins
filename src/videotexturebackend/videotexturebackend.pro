@@ -18,6 +18,10 @@ PKGCONFIG +=\
 
 LIBS += -lqgsttools_p
 
+# It won't compile without this,
+# the issue is Xlib.h defines Bool as int but  QJsonValue.h has an enum with Bool = 0x1 --> int = 0x1 -> BOOM!
+DEFINES += MESA_EGL_NO_X11_HEADERS
+
 SOURCES += \
         videotexturebackend.cpp
 
