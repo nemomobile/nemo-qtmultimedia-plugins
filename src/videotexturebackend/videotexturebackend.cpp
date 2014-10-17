@@ -501,8 +501,6 @@ NemoVideoTextureBackend::NemoVideoTextureBackend(QDeclarativeVideoOutput *parent
         gst_object_ref(GST_OBJECT(m_sink));
         gst_object_sink(GST_OBJECT(m_sink));
 
-        g_object_set(G_OBJECT(m_sink), "egl-display", m_display, NULL);
-
         m_signalId = g_signal_connect(
                     G_OBJECT(m_sink), "frame-ready", G_CALLBACK(frame_ready), this);
     }
@@ -613,7 +611,12 @@ QSGNode *NemoVideoTextureBackend::updatePaintNode(QSGNode *oldNode, QQuickItem::
         if (m_texture) {
             m_texture->invalidateTexture();
         }
+
         delete node;
+
+        NemoGstVideoTexture *sink = NEMO_GST_VIDEO_TEXTURE(m_sink);
+        nemo_gst_video_texture_detach_from_display(sink);
+
         return 0;
     }
 
@@ -626,6 +629,9 @@ QSGNode *NemoVideoTextureBackend::updatePaintNode(QSGNode *oldNode, QQuickItem::
     m_texture->setTextureSize(m_textureSize);
 
     if (!node) {
+        NemoGstVideoTexture *sink = NEMO_GST_VIDEO_TEXTURE(m_sink);
+        nemo_gst_video_texture_attach_to_display(sink, m_display);
+
         node = new GStreamerVideoNode(m_texture);
         m_geometryChanged = true;
     }
