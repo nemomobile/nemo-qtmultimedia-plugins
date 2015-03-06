@@ -50,6 +50,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <gst/interfaces/nemovideotexture.h>
+#include <gst/video/gstvideometa.h>
 
 #include <QThread>
 
@@ -199,13 +200,13 @@ bool GStreamerVideoTexture::updateTexture()
     int top = 0;
     int right = 0;
     int bottom = 0;
-    static const GQuark cropQuark = g_quark_from_string("GstDroidCamSrcCropData");
-    if (const GstStructure *crop = nemo_gst_video_texture_get_frame_qdata(
-                sink, cropQuark)) {
-        gst_structure_get_int(crop, "left", &left);
-        gst_structure_get_int(crop, "top", &top);
-        gst_structure_get_int(crop, "right", &right);
-        gst_structure_get_int(crop, "bottom", &bottom);
+    if (GstMeta *meta = nemo_gst_video_texture_get_frame_meta (sink,
+                GST_VIDEO_CROP_META_API_TYPE)) {
+        GstVideoCropMeta *crop = (GstVideoCropMeta *) meta;
+        left = crop->x;
+        top = crop->y;
+        right = crop->width + left;
+        bottom = crop->height + top;
     }
 
     if (left != right && top != bottom) {
