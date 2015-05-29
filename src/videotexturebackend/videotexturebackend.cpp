@@ -724,9 +724,9 @@ void NemoVideoTextureBackend::frame_ready(GstElement *, int frame, void *data)
 
         instance->m_active = true;
         instance->m_frameChanged = true;
-
-        QCoreApplication::postEvent(instance, new QEvent(QEvent::UpdateRequest));
     }
+
+    QCoreApplication::postEvent(instance, new QEvent(QEvent::UpdateRequest));
 }
 
 GstPadProbeReturn NemoVideoTextureBackend::probe(GstPad *, GstPadProbeInfo *info, void *data)
