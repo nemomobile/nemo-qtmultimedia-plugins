@@ -13,8 +13,8 @@ CONFIG += plugin hide_symbols link_pkgconfig
 
 PKGCONFIG +=\
         egl \
-        gstreamer-0.10 \
-        nemo-gstreamer-interfaces-0.10
+        gstreamer-1.0 \
+        nemo-gstreamer-interfaces-1.0
 
 LIBS += -lqgsttools_p
 

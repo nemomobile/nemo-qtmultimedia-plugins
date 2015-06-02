@@ -50,6 +50,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <gst/interfaces/nemovideotexture.h>
+#include <gst/video/gstvideometa.h>
 
 #include <QThread>
 
@@ -199,13 +200,13 @@ bool GStreamerVideoTexture::updateTexture()
     int top = 0;
     int right = 0;
     int bottom = 0;
-    static const GQuark cropQuark = g_quark_from_string("GstDroidCamSrcCropData");
-    if (const GstStructure *crop = nemo_gst_video_texture_get_frame_qdata(
-                sink, cropQuark)) {
-        gst_structure_get_int(crop, "left", &left);
-        gst_structure_get_int(crop, "top", &top);
-        gst_structure_get_int(crop, "right", &right);
-        gst_structure_get_int(crop, "bottom", &bottom);
+    if (GstMeta *meta = nemo_gst_video_texture_get_frame_meta (sink,
+                GST_VIDEO_CROP_META_API_TYPE)) {
+        GstVideoCropMeta *crop = (GstVideoCropMeta *) meta;
+        left = crop->x;
+        top = crop->y;
+        right = crop->width + left;
+        bottom = crop->height + top;
     }
 
     if (left != right && top != bottom) {
@@ -463,6 +464,7 @@ private slots:
 
 private:
     static void frame_ready(GstElement *sink, int frame, void *data);
+    static GstPadProbeReturn probe(GstPad *pad, GstPadProbeInfo *info, void *data);
 
     QMutex m_mutex;
     QPointer<QGStreamerElementControl> m_control;
@@ -473,6 +475,7 @@ private:
     QSize m_textureSize;
     QSize m_implicitSize;
     gulong m_signalId;
+    gulong m_probeId;
     int m_orientation;
     int m_textureOrientation;
     bool m_mirror;
@@ -487,6 +490,7 @@ NemoVideoTextureBackend::NemoVideoTextureBackend(QDeclarativeVideoOutput *parent
     , m_display(0)
     , m_texture(0)
     , m_signalId(0)
+    , m_probeId(0)
     , m_orientation(0)
     , m_textureOrientation(0)
     , m_mirror(false)
@@ -504,12 +508,19 @@ NemoVideoTextureBackend::NemoVideoTextureBackend(QDeclarativeVideoOutput *parent
     if ((m_sink = gst_element_factory_make("droideglsink", NULL))) {
         // Take ownership of the element or it will be destroyed when any bin it was added to is.
         gst_object_ref(GST_OBJECT(m_sink));
-        gst_object_sink(GST_OBJECT(m_sink));
+        gst_object_ref_sink(GST_OBJECT(m_sink));
 
         g_object_set(G_OBJECT(m_sink), "egl-display", m_display, NULL);
 
         m_signalId = g_signal_connect(
                     G_OBJECT(m_sink), "frame-ready", G_CALLBACK(frame_ready), this);
+
+        m_probeId = gst_pad_add_probe(
+                    gst_element_get_static_pad(m_sink, "sink"),
+                    GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+                    probe,
+                    this,
+                    NULL);
     }
 }
 
@@ -521,6 +532,7 @@ NemoVideoTextureBackend::~NemoVideoTextureBackend()
         QMutexLocker locker(&m_mutex);
 
         g_signal_handler_disconnect(G_OBJECT(m_sink), m_signalId);
+        gst_pad_remove_probe(gst_element_get_static_pad(m_sink, "sink"), m_probeId);
         gst_object_unref(GST_OBJECT(m_sink));
         m_sink = 0;
     }
@@ -705,58 +717,88 @@ void NemoVideoTextureBackend::frame_ready(GstElement *, int frame, void *data)
 {
     NemoVideoTextureBackend *instance = static_cast<NemoVideoTextureBackend *>(data);
 
-    QSize implicitSize;
-
     if (frame < 0) {
         instance->m_active = false;
     } else {
         QMutexLocker locker(&instance->m_mutex);
 
-        if (!instance->m_sink) {
-            return;
-        }
-
-        if (GstCaps *caps = gst_pad_get_negotiated_caps(
-                       gst_element_get_static_pad(instance->m_sink, "sink"))) {
-            QSize textureSize;
-
-            const GstStructure *structure = gst_caps_get_structure(caps, 0);
-            gst_structure_get_int(structure, "width", &textureSize.rwidth());
-            gst_structure_get_int(structure, "height", &textureSize.rheight());
-
-            implicitSize = textureSize;
-            gint numerator = 0;
-            gint denominator = 0;
-            if (gst_structure_get_fraction(structure, "pixel-aspect-ratio", &numerator, &denominator)
-                    && denominator > 0) {
-                implicitSize.setWidth(implicitSize.width() * numerator / denominator);
-            }
-
-            int orientation = 0;
-            gst_structure_get_int(structure, "orientation-angle", &orientation);
-
-            instance->m_textureOrientation = orientation >= 0 ? orientation : 0;
-            instance->m_textureSize = textureSize;
-            instance->m_geometryChanged = true;
-            instance->m_active = true;
-
-            if (orientation % 180 != 0) {
-                implicitSize.transpose();
-            }
-
-            gst_caps_unref(caps);
-        }
-
+        instance->m_active = true;
         instance->m_frameChanged = true;
-
-        if (instance->m_implicitSize != implicitSize) {
-            instance->m_implicitSize = implicitSize;
-
-            QCoreApplication::postEvent(instance, new QResizeEvent(implicitSize, implicitSize));
-        } else {
-            QCoreApplication::postEvent(instance, new QEvent(QEvent::UpdateRequest));
-        }
     }
+
+    QCoreApplication::postEvent(instance, new QEvent(QEvent::UpdateRequest));
+}
+
+GstPadProbeReturn NemoVideoTextureBackend::probe(GstPad *, GstPadProbeInfo *info, void *data)
+{
+    NemoVideoTextureBackend * const instance = static_cast<NemoVideoTextureBackend *>(data);
+    GstEvent * const event = gst_pad_probe_info_get_event(info);
+    if (!event) {
+        return GST_PAD_PROBE_OK;
+    }
+
+    QMutexLocker locker(&instance->m_mutex);
+
+    QSize implicitSize = instance->m_implicitSize;
+    int orientation = instance->m_textureOrientation;
+    bool geometryChanged = false;
+
+    if (GST_EVENT_TYPE(event) == GST_EVENT_CAPS) {
+        GstCaps *caps;
+        gst_event_parse_caps(event, &caps);
+
+        QSize textureSize;
+
+        const GstStructure *structure = gst_caps_get_structure(caps, 0);
+        gst_structure_get_int(structure, "width", &textureSize.rwidth());
+        gst_structure_get_int(structure, "height", &textureSize.rheight());
+
+        implicitSize = textureSize;
+        gint numerator = 0;
+        gint denominator = 0;
+        if (gst_structure_get_fraction(structure, "pixel-aspect-ratio", &numerator, &denominator)
+                && denominator > 0) {
+            implicitSize.setWidth(implicitSize.width() * numerator / denominator);
+        }
+
+        instance->m_textureSize = textureSize;
+        geometryChanged = true;
+    } else if (GST_EVENT_TYPE(event) == GST_EVENT_TAG) {
+        GstTagList *tags;
+        gst_event_parse_tag(event, &tags);
+
+        gchar *orientationTag = 0;
+        if (!gst_tag_list_get_string(tags, GST_TAG_IMAGE_ORIENTATION, &orientationTag)) {
+            // No orientation in tags, ignore.
+        } else if (qstrcmp(orientationTag, "rotate-90") == 0) {
+            orientation = 90;
+        } else if (qstrcmp(orientationTag, "rotate-180") == 0) {
+            orientation = 180;
+        } else if (qstrcmp(orientationTag, "rotate-270") == 0) {
+            orientation = 270;
+        } else {
+            orientation = 0;
+        }
+    } else if (GST_EVENT_TYPE(event) == GST_EVENT_STREAM_START) {
+        orientation = 0;
+    }
+
+    if (instance->m_textureOrientation != orientation || instance->m_implicitSize != implicitSize) {
+        instance->m_implicitSize = implicitSize;
+        instance->m_textureOrientation= orientation;
+        instance->m_geometryChanged = true;
+
+        if (orientation % 180 != 0) {
+            implicitSize.transpose();
+        }
+
+        QCoreApplication::postEvent(instance, new QResizeEvent(implicitSize, implicitSize));
+    } else if (geometryChanged) {
+        instance->m_geometryChanged = true;
+        QCoreApplication::postEvent(instance, new QEvent(QEvent::UpdateRequest));
+    }
+
+    return GST_PAD_PROBE_OK;
 }
 
 class NemoVideoTextureBackendPlugin : public QObject, public QDeclarativeVideoBackendFactoryInterface
