@@ -209,15 +209,24 @@ bool GStreamerVideoTexture::updateTexture()
         bottom = crop->height + top;
     }
 
-    if (left != right && top != bottom) {
-        m_subRect = QRectF(
-                    qreal(left) / m_textureSize.width(),
-                    qreal(top) / m_textureSize.height(),
-                    qreal(right - left) / m_textureSize.width(),
-                    qreal(bottom - top) / m_textureSize.height());
-    } else {
-        m_subRect = QRectF(0, 0, 1, 1);
+    // All the calculations below are based on ideas from Android GLConsumer.
+    // The difference between us and Android is we rely on texture coordinates
+    // while Android relies on a matxrix for cropping
+    qreal x = 0.0, y = 0.0, width = 1.0, height = 1.0;
+
+    // This value is taken from Android GLConsumer
+    qreal shrinkAmount = 1.0;
+    if (right - left < m_textureSize.width()) {
+        x = (left + shrinkAmount) / m_textureSize.width();
+        width = ((right - left) - (2.0f * shrinkAmount)) / m_textureSize.width();
     }
+
+    if (bottom - top < m_textureSize.height()) {
+        y = (top + shrinkAmount) / m_textureSize.height();
+        height = (bottom - top - (2.0 * shrinkAmount)) / m_textureSize.height();
+    }
+
+    m_subRect = QRectF(x, y, width, height);
 
     EGLImageKHR image;
     if (!nemo_gst_video_texture_bind_frame(sink, &image)) {
