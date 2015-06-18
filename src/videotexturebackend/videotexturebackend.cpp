@@ -216,14 +216,16 @@ bool GStreamerVideoTexture::updateTexture()
 
     // This value is taken from Android GLConsumer
     qreal shrinkAmount = 1.0;
-    if (right - left < m_textureSize.width()) {
+    qreal croppedWidth = right - left;
+    qreal croppedHeight = bottom - top;
+    if (croppedWidth > 0 && croppedWidth < m_textureSize.width()) {
         x = (left + shrinkAmount) / m_textureSize.width();
-        width = ((right - left) - (2.0f * shrinkAmount)) / m_textureSize.width();
+        width = ((croppedWidth) - (2.0f * shrinkAmount)) / m_textureSize.width();
     }
 
-    if (bottom - top < m_textureSize.height()) {
+    if (croppedHeight > 0 && croppedHeight < m_textureSize.height()) {
         y = (top + shrinkAmount) / m_textureSize.height();
-        height = (bottom - top - (2.0 * shrinkAmount)) / m_textureSize.height();
+        height = (croppedHeight - (2.0f * shrinkAmount)) / m_textureSize.height();
     }
 
     m_subRect = QRectF(x, y, width, height);
