@@ -136,9 +136,8 @@ GStreamerVideoTexture::~GStreamerVideoTexture()
 {
     releaseTexture();
 
-    if (m_textureId) {
-        glDeleteTextures(1, &m_textureId);
-    }
+    invalidateTexture();
+
     if (m_sink) {
         gst_object_unref(GST_OBJECT(m_sink));
     }
@@ -232,10 +231,9 @@ bool GStreamerVideoTexture::updateTexture()
 
     EGLImageKHR image;
     if (!nemo_gst_video_texture_bind_frame(sink, &image)) {
-        if (m_textureId) {
-            glDeleteTextures(1, &m_textureId);
-            m_textureId = 0;
-        }
+
+        invalidateTexture();
+
         nemo_gst_video_texture_release_frame(sink, NULL);
         return false;
     } else {
@@ -275,10 +273,7 @@ void GStreamerVideoTexture::releaseTexture()
 
         nemo_gst_video_texture_unbind_frame(sink);
 
-        if (m_textureId) {
-            glDeleteTextures(1, &m_textureId);
-            m_textureId = 0;
-        }
+        invalidateTexture();
 
         EGLSyncKHR sync = eglCreateSyncKHR(m_display, EGL_SYNC_FENCE_KHR, NULL);
         nemo_gst_video_texture_release_frame(sink, sync);
@@ -730,6 +725,7 @@ void NemoVideoTextureBackend::frame_ready(GstElement *, int frame, void *data)
 
     if (frame < 0) {
         instance->m_active = false;
+        QCoreApplication::postEvent(instance, new QEvent(QEvent::UpdateRequest));
     } else {
         QMutexLocker locker(&instance->m_mutex);
 
